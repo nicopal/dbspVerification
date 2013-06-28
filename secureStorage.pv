@@ -1,0 +1,112 @@
+free c:channel.
+
+(*Public key encryption*)
+
+type pkey.
+type skey.
+
+fun pk(skey): pkey.
+fun aencrypt(bitstring, pkey):bitstring.
+reduc forall x: bitstring, y:skey; adecrypt(aencrypt(x, pk(y)), y) = x.
+
+(*Signatures*)
+type signpkey.
+type signskey.
+
+fun spk(signskey):signpkey.
+fun sign(bitstring, signskey): bitstring.
+reduc forall x: bitstring, y: signskey; getmess(sign(x, y)) = x.
+reduc forall x: bitstring, y: signskey; checksign(sign(x, y), spk(y)) = x.
+
+(*Shared key encryption*)
+type nonce.
+
+fun sencrypt(bitstring, nonce):bitstring.
+reduc forall x:bitstring, y:nonce; sdecrypt(sencrypt(x, y), y) = x.
+
+(*Type converter*)
+fun nonce_to_bitstring(nonce):bitstring[data, typeConverter].
+
+(* Key generator *)
+fun gen_ekey(bitstring, nonce): nonce.
+fun gen_ikey(bitstring, nonce): nonce.
+
+(* Domain nonce generator *)
+fun gen_domain_nonce(bitstring): nonce.
+
+(* Storage table*)
+table storage(bitstring, bitstring).
+
+(* Authentication queries *)
+event beginTTPparam(pkey).
+event endTTPparam(pkey).
+event beginSCparam(pkey).
+event endSCparam(pkey).
+
+
+query x:pkey; inj-event(endTTPparam(x)) ==> inj-event(beginTTPparam(x)).
+query x:pkey; inj-event(endSCparam(x)) ==> inj-event(beginSCparam(x)).
+
+(* Secrecy queries *)
+free sessionKey: nonce [private].
+free payload, srr, blockId, domain, blockEncKey, blockIntegKey:bitstring [private].
+
+query attacker(sessionKey);
+      attacker(srr);
+      attacker(domain).
+
+let processSC(sessionKey:nonce, srr:bitstring,
+                                domain:bitstring,
+                                payload:bitstring,
+                                blockId:bitstring,
+                                pkTTP: pkey, skSC:skey) =
+    in (c, (pkX:pkey));
+    event beginTTPparam(pkX);
+    new Nsc: bitstring;
+    out (c, (aencrypt((Nsc, sessionKey), pkX),
+            sencrypt((Nsc, srr, domain), sessionKey)));
+    in  (c, (m:bitstring, wt:bitstring));
+    let (=Nsc,=domain, blockEncKeyX:nonce,
+                       blockIntegKeyX:nonce) = sdecrypt(m, sessionKey) in
+    out (c, (blockId, sencrypt(payload, blockEncKeyX), wt));
+    0.
+
+let processTTP(pkSC:pkey, skTTP:skey, mk:nonce) =
+    in (c, (m:bitstring, n:bitstring));
+    let(NonceY:bitstring, sessionKeyY:nonce) = adecrypt(m, skTTP) in
+    let(RepeatedNonceY:bitstring,
+        srrY:bitstring, domainY:bitstring) = sdecrypt(n, sessionKeyY) in
+    new Nb:nonce;
+    out(c, (sencrypt((NonceY, domainY,
+                     gen_ekey(nonce_to_bitstring(gen_domain_nonce(domain)), mk),
+                     gen_ikey(nonce_to_bitstring(gen_domain_nonce(domain)), mk)),
+                     sessionKeyY),
+           sencrypt((Nb, domain, srr), mk)));
+    0.
+
+let processSR() =
+    in (c, (bid:bitstring, payloadY:bitstring, wtY:bitstring));
+    insert storage(bid, (payloadY, wtY));
+    0.
+
+query attacker(blockEncKey);
+      attacker(blockIntegKey);
+      attacker(blockId);
+      attacker(blockIntegKey);
+      attacker(payload).
+
+
+(*Main*)
+process
+        new symmetricKey:nonce;
+        new storageReference:bitstring;
+        new domainReference:bitstring;
+        new masterKey:nonce;
+        new payload:bitstring;
+        new blockId:bitstring;
+        new skSC:skey; let pkSC = pk(skSC) in out (c, pkSC);
+        new skTTP:skey; let pkTTP = pk(skTTP) in out (c, pkTTP);
+        ( (!processSC(symmetricKey, storageReference,
+                      domainReference, payload, blockId, pkTTP, skSC)) |
+          (!processTTP(pkSC, skTTP, masterKey)) |
+          (!processSR()))
