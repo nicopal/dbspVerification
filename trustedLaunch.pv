@@ -1,0 +1,71 @@
+free c:channel.
+free d:channel [private].
+free sp:bitstring.
+free IDttp:bitstring.
+free m:bitstring [private].
+
+query attacker(m).
+
+(* = Define Primitives = *)
+
+(* == Public-private keys == *)
+type pkey.
+type skey.
+
+fun pk(skey): pkey.
+fun aencrypt(bitstring, pkey):bitstring.
+
+reduc forall x: bitstring, y:skey; adecrypt(aencrypt(x, pk(y)), y) = x.
+
+(* == Signatures == *)
+type spkey.
+type sskey.
+
+fun spk(sskey):spkey.
+fun sign(bitstring, sskey): bitstring.
+
+reduc forall x: bitstring, y: sskey; getmess(sign(x, y)) = x.
+reduc forall x: bitstring, y: sskey; checksign(sign(x, y), spk(y)) = x.
+
+(* == Shared key encryption == *)
+type nonce.
+fun sencrypt(bitstring, nonce):bitstring.
+reduc forall x:bitstring, y:nonce; sdecrypt(sencrypt(x, y), y) = x.
+
+
+let DM(pkeyDM:pkey, skeyDM:skey, pkeyTTP:pkey) =
+    out (c, aencrypt(m, pkeyTTP));
+    in (c, tauTPM:bitstring);
+    let (=adecrypt(tauTPM, skeyDM), t:bitstring) = m in
+    0.
+
+let TPM(pkeyTPM:pkey, skeyTPM:skey, sskeyTPM:sskey, iml:bitstring) =
+    in (c, (tau:bitstring, pkeyDM:pkey));
+    out(c, (pkeyTPM, sign(iml, sskeyTPM), iml, tau));
+    in (c, tauTPM:bitstring);
+    out(c, aencrypt(adecrypt(tauTPM, skeyTPM), pkeyDM)).
+
+let TTP(pkeyTTP:pkey, skeyTTP:skey, spkeyTPM:spkey, imlGold:bitstring) =
+    in (c, (pkeyTPM:pkey, sigmaTTP:bitstring, iml:bitstring, tauTTP:bitstring));
+    let(=iml, i:bitstring) = checksign(sigmaTTP, spkeyTPM) in
+    let(=iml, z:bitstring) = imlGold in
+    out(c, aencrypt(adecrypt(tauTTP, skeyTTP), pkeyTPM)).
+
+
+(* ==Launch VM ==*)
+
+
+(* = Main = *)
+process
+    new skeyDM: skey;
+    new skeyTTP: skey;
+    new skeyTPM: skey;
+    new sskeyTPM: sskey;
+    new iml:bitstring;
+    let pkeyDM = pk(skeyDM) in out (c, pkeyDM);
+    let pkeyTTP = pk(skeyTTP) in out (c, pkeyTTP);
+    let pkeyTPM = pk(skeyTPM) in out (c, pkeyTPM);
+    let spkeyTPM =spk(sskeyTPM) in out (c, spkeyTPM);
+    let tau = aencrypt(m, pkeyTTP) in out (c, tau);
+    let imlGold = iml in out (c, imlGold);
+    ( (!DM(pkeyDM, skeyDM, pkeyTTP)) | (!TPM(pkeyTPM, skeyTPM, sskeyTPM, iml)) | (!TTP(pkeyTTP, skeyTTP, spkeyTPM, imlGold)) )
