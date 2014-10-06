@@ -39,18 +39,28 @@ let DM(pkeyDM:pkey, skeyDM:skey, pkeyTTP:pkey) =
     let (=adecrypt(tauTPM, skeyDM), t:bitstring) = m in
     0.
 
-let TPM(pkeyTPM:pkey, skeyTPM:skey, sskeyTPM:sskey, iml:bitstring) =
+
+let SC(request:bitstring) =
     in (c, (tau:bitstring, pkeyDM:pkey));
-    out(c, (pkeyTPM, sign(iml, sskeyTPM), iml, tau));
-    in (c, tauTPM:bitstring);
-    out(c, aencrypt(adecrypt(tauTPM, skeyTPM), pkeyDM)).
+    out(d, request);
+    in(d,  (pkeyTPM:pkey, signTPM:bitstring, iml:bitstring));
+    out(c, (pkeyTPM, signTPM, iml, tau));
+    in(d, tauTPM:bitstring);
+    out(d, tauTPM);
+    in(d, tauSC:bitstring);
+    out(c, aencrypt(tauSC, pkeyDM)).
+
+let TPM(pkeyTPM:pkey, skeyTPM:skey, sskeyTPM:sskey, iml:bitstring) =
+    in (d, request:bitstring);
+    out(d, (pkeyTPM, sign(iml, sskeyTPM), iml));
+    in (d, tauTPM:bitstring);
+    out(d, adecrypt(tauTPM, skeyTPM)).
 
 let TTP(pkeyTTP:pkey, skeyTTP:skey, spkeyTPM:spkey, imlGold:bitstring) =
     in (c, (pkeyTPM:pkey, sigmaTTP:bitstring, iml:bitstring, tauTTP:bitstring));
     let(=iml, i:bitstring) = checksign(sigmaTTP, spkeyTPM) in
     let(=iml, z:bitstring) = imlGold in
     out(c, aencrypt(adecrypt(tauTTP, skeyTTP), pkeyTPM)).
-
 
 (* ==Launch VM ==*)
 
@@ -61,6 +71,7 @@ process
     new skeyTTP: skey;
     new skeyTPM: skey;
     new sskeyTPM: sskey;
+    new request:bitstring;
     new iml:bitstring;
     let pkeyDM = pk(skeyDM) in out (c, pkeyDM);
     let pkeyTTP = pk(skeyTTP) in out (c, pkeyTTP);
@@ -68,4 +79,4 @@ process
     let spkeyTPM =spk(sskeyTPM) in out (c, spkeyTPM);
     let tau = aencrypt(m, pkeyTTP) in out (c, tau);
     let imlGold = iml in out (c, imlGold);
-    ( (!DM(pkeyDM, skeyDM, pkeyTTP)) | (!TPM(pkeyTPM, skeyTPM, sskeyTPM, iml)) | (!TTP(pkeyTTP, skeyTTP, spkeyTPM, imlGold)) )
+    ( (!DM(pkeyDM, skeyDM, pkeyTTP)) | (!TPM(pkeyTPM, skeyTPM, sskeyTPM, iml)) | (!SC(request)) | (!TTP(pkeyTTP, skeyTTP, spkeyTPM, imlGold)) )
